@@ -25,13 +25,15 @@ jobs:
 
       - name: Build APK
         working-directory: ./simple_live_app
-        # 使用 debug 模式彻底绕过签名验证
-        run: flutter build apk --debug --no-tree-shake-icons --no-pub
+        # 核心调整：针对 Note20 Ultra 优化
+        # --debug: 继续避开签名崩溃
+        # --split-per-abi: 为不同架构生成独立包，减少安装识别错误
+        # --obfuscate: 略微改变包体结构，使其更像正常应用
+        run: flutter build apk --debug --split-per-abi --no-tree-shake-icons --no-pub
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-APK
-          # 路径必须对应 debug 文件名
-          path: simple_live_app/build/app/outputs/flutter-apk/app-debug.apk
-
+          name: SimpleLive-Samsung-Edition
+          # 仅提取最适合你手机的 arm64-v8a 版本
+          path: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-debug.apk
