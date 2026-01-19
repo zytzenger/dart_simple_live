@@ -1,4 +1,4 @@
-name: Note20U & Lenovo Optimized Release
+name: Note20U & Lenovo Final Release
 on: workflow_dispatch
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
         with:
           channel: 'stable'
 
-      # --- 1. 安卓端优化：专为三星 Note20 Ultra (Arm64) 编译 ---
+      # --- 1. Android (Note20 Ultra) ---
       - name: Build Android
         if: matrix.platform == 'android'
         run: |
@@ -29,11 +29,10 @@ jobs:
           echo "keyAlias=upload" >> simple_live_app/android/key.properties
           echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
           cd simple_live_app && flutter pub get 
-          # 仅编译 arm64 架构，确保体积低于蓝奏云限制
           flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
           mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Note20U-Arm64.apk
 
-      # --- 2. Windows端：适配联想小新 Air 13 Pro ---
+      # --- 2. Windows (Lenovo Air13) ---
       - name: Build Windows
         if: matrix.platform == 'windows'
         run: |
@@ -43,41 +42,39 @@ jobs:
           flutter build windows --release
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Lenovo-Air13.zip
 
-      # --- 3. 基础发布：将成品存入 GitHub Releases ---
+      # --- 3. GitHub Release ---
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.3.${{ github.run_number }}
-          name: "Optimized Build v1.3.${{ github.run_number }}"
+          name: "Final Build v1.3.${{ github.run_number }}"
           files: |
             *.apk
             *.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- 4. 智能上传：蓝奏云分发（带重试与编码修正） ---
+      # --- 4. Smart Upload (English Log Only) ---
       - name: Smart Upload to Lanzou
         shell: bash
         env:
           LANZOU_COOKIE: ${{ secrets.LANZOU_COOKIE }}
-          PYTHONIOENCODING: utf-8
         run: |
           pip install lanzou-api
           python -c "
           import os, lanzou.api, time, sys
-          
-          # 强制指定输出编码，防止 Windows 端编码报错
-          sys.stdout.reconfigure(encoding='utf-8') if hasattr(sys.stdout, 'reconfigure') else None
+          # Force UTF8 for Windows environment
+          if hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(encoding='utf-8')
           
           LanzouClass = getattr(lanzou.api, 'LanZouCloud', getattr(lanzou.api, 'LanzouCloud', None))
           
           def smart_upload(file_name):
               if not os.path.exists(file_name): return
               file_size = os.path.getsize(file_name) / (1024 * 1024)
-              print(f'\n[Checking] {file_name} - Size: {file_size:.2f} MB')
+              print(f'Checking: {file_name} ({file_size:.2f} MB)')
               
               if file_size > 99:
-                  print(f'Warning: File too large for Lanzou. Check GitHub Releases instead.')
+                  print('File too large, skipping Lanzou.')
               else:
                   lanzou_instance = LanzouClass()
                   cookie_val = os.environ['LANZOU_COOKIE']
@@ -92,9 +89,9 @@ jobs:
                           if res:
                               print(f'SUCCESS! Link: {res.full_address}')
                               return
-                      print(f'Attempt {attempt+1} failed (Code: {login_res}). Retrying...')
+                      print(f'Attempt {attempt+1} failed (Code: {login_res}), retrying...')
                       time.sleep(5)
-                  print(f'Error: Could not upload {file_name} after 3 attempts.')
+                  print(f'Final Error: {file_name} failed.')
 
           if LanzouClass:
               for f in os.listdir('.'):
