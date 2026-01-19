@@ -28,13 +28,13 @@ jobs:
           flutter pub get
           flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
 
-      - name: Upload Android to Aliyun
-        # 修正后的插件路径
-        uses: imndp/aliyunpan-action@v1
-        with:
-          refreshToken: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
-          uploadPath: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-          remoteDir: /Github_Artifacts/Android
+      - name: Upload to Aliyun Drive
+        # 使用命令行工具 ali-avpan，不依赖 Github Action 插件库
+        env:
+          REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
+        run: |
+          curl -sL https://git.io/file-transfer | sh
+          ./transfer ali simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Android
 
   build-windows:
     runs-on: windows-latest
@@ -51,15 +51,14 @@ jobs:
           flutter pub get
           flutter build windows --release
 
-      - name: Zip Windows Package
-        shell: pwsh
+      - name: Zip and Upload Windows
+        shell: bash
+        env:
+          REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip
-      
-      - name: Upload Windows to Aliyun
-        # 修正后的插件路径
-        uses: imndp/aliyunpan-action@v1
-        with:
-          refreshToken: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
-          uploadPath: ./Windows_Release.zip
-          remoteDir: /Github_Artifacts/Windows
+          cd simple_live_app/build/windows/x64/runner/
+          zip -r ../../../../../Windows_Release.zip ./*
+          cd ../../../../../
+          # Windows 下也使用 bash 调用命令行上传
+          curl -sL https://git.io/file-transfer | sh
+          ./transfer ali Windows_Release.zip --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Windows
