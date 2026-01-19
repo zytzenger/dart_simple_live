@@ -55,9 +55,15 @@ jobs:
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          # 使用 Windows 原生命令压缩包
-          Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip
+          # 1. 压缩包生成（这步没问题）
+          Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip -Force
           
-          # 显式下载并使用 bash 环境执行上传，解决 Windows 环境下的路径识别问题
-          Invoke-WebRequest -Uri "https://git.io/file-transfer" -OutFile transfer.sh
-          bash ./transfer.sh ali Windows_Release.zip --token "$env:REFRESH_TOKEN" --dir "/Github_Artifacts/Windows"
+          # 2. 直接使用 Windows 兼容的上传逻辑
+          # 下载专门针对 Windows 环境优化的上传工具
+          Invoke-WebRequest -Uri "https://github.com/tickstep/aliyunpan/releases/download/v0.3.0/aliyunpan-v0.3.0-windows-x64.zip" -OutFile aliyunpan.zip
+          Expand-Archive -Path aliyunpan.zip -DestinationPath .
+          cd aliyunpan-v0.3.0-windows-x64
+          
+          # 登录并上传
+          ./aliyunpan.exe login -refresh_token $env:REFRESH_TOKEN
+          ./aliyunpan.exe upload ../Windows_Release.zip /Github_Artifacts/Windows
