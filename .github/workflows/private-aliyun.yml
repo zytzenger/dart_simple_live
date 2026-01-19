@@ -32,8 +32,9 @@ jobs:
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          curl -sL https://git.io/file-transfer | sh
-          ./transfer ali simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Android
+          curl -sL https://git.io/file-transfer -o transfer.sh
+          chmod +x transfer.sh
+          ./transfer.sh ali simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Android
 
   build-windows:
     runs-on: windows-latest
@@ -55,15 +56,14 @@ jobs:
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          # 1. 压缩包生成（这步没问题）
+          # 1. 生成压缩包
           Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip -Force
           
-          # 2. 直接使用 Windows 兼容的上传逻辑
-          # 下载专门针对 Windows 环境优化的上传工具
+          # 2. 下载 Windows 专用工具并解压
           Invoke-WebRequest -Uri "https://github.com/tickstep/aliyunpan/releases/download/v0.3.0/aliyunpan-v0.3.0-windows-x64.zip" -OutFile aliyunpan.zip
           Expand-Archive -Path aliyunpan.zip -DestinationPath .
-          cd aliyunpan-v0.3.0-windows-x64
           
-          # 登录并上传
-          ./aliyunpan.exe login -refresh_token $env:REFRESH_TOKEN
+          # 3. 修正后的登录与上传指令（去掉 - 符号，直接使用参数名）
+          cd aliyunpan-v0.3.0-windows-x64
+          ./aliyunpan.exe login -refreshToken "$env:REFRESH_TOKEN"
           ./aliyunpan.exe upload ../Windows_Release.zip /Github_Artifacts/Windows
