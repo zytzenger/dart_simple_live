@@ -1,9 +1,8 @@
-name: Ultimate Stable Build
+name: Lanzou and Release Sync
 on: workflow_dispatch
 
 jobs:
   build:
-    name: Build and Link
     strategy:
       matrix:
         include:
@@ -18,19 +17,18 @@ jobs:
         with:
           channel: 'stable'
 
-      # --- 编译 Android ---
       - name: Build Android
         if: matrix.platform == 'android'
         run: |
+          # 签名与编译逻辑
           keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown"
           echo "storePassword=123456" > simple_live_app/android/key.properties
           echo "keyPassword=123456" >> simple_live_app/android/key.properties
           echo "keyAlias=upload" >> simple_live_app/android/key.properties
           echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
           cd simple_live_app && flutter pub get && flutter build apk --release --no-tree-shake-icons
-          mv simple_live_app/build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Android.apk
+          mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Android.apk
 
-      # --- 编译 Windows ---
       - name: Build Windows
         if: matrix.platform == 'windows'
         run: |
@@ -40,34 +38,32 @@ jobs:
           flutter build windows --release
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Windows.zip
 
-      # --- 1. 生成 WeTransfer 短链接 (你需要的) ---
-      - name: Generate WeTransfer Link
-        shell: bash
-        run: |
-          curl -fsSL git.io/file-transfer | sh
-          if [ "${{ matrix.platform }}" == "android" ]; then
-            ./transfer wet SimpleLive-Android.apk
-          else
-            ./transfer wet SimpleLive-Windows.zip
-          fi
-
-      # --- 2. 存入 GitHub Releases ---
-      - name: Release to GitHub
+      - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: success()
         with:
           tag_name: v1.0.${{ github.run_number }}
+          name: "Build v1.0.${{ github.run_number }}"
           files: |
             *.apk
             *.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- 3. 存入 Actions Artifacts ---
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.platform }}-files
-          path: |
-            *.apk
-            *.zip
+      - name: Upload to Lanzou (Android Only)
+        if: matrix.platform == 'android'
+        env:
+          LANZOU_COOKIE: ${{ secrets.LANZOU_COOKIE }}
+        run: |
+          pip install lanzou-api
+          python -c "
+          from lanzou.api import LanzouCloud
+          import os
+          lanzou = LanzouCloud()
+          # 使用你抓到的 ylogin 登录
+          if lanzou.login_by_cookie(os.environ['LANZOU_COOKIE']) == LanzouCloud.SUCCESS:
+              # -1 代表上传到根目录。如果你想传到特定文件夹，把 -1 改为你的文件夹 ID
+              res = lanzou.upload_file('SimpleLive-Android.apk', -1)
+              print(f'SUCCESS: Lanzou link is {res.full_address}')
+          else:
+              print('FAILURE: Could not login to Lanzou')
+          "
