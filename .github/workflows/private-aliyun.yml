@@ -18,7 +18,6 @@ jobs:
         with:
           channel: 'stable'
 
-      # --- 编译 Android ---
       - name: Build Android
         if: matrix.platform == 'android'
         run: |
@@ -30,7 +29,6 @@ jobs:
           cd simple_live_app && flutter pub get && flutter build apk --release --no-tree-shake-icons
           mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Android.apk
 
-      # --- 编译 Windows ---
       - name: Build Windows
         if: matrix.platform == 'windows'
         run: |
@@ -40,19 +38,17 @@ jobs:
           flutter build windows --release
           Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Windows.zip
 
-      # --- 1. 存入 GitHub Releases (所有文件) ---
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Build v1.0.${{ github.run_number }}"
+          tag_name: v1.1.${{ github.run_number }}
+          name: "Final Build v1.1.${{ github.run_number }}"
           files: |
             *.apk
             *.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- 2. 智能秤重上传蓝奏云 ---
       - name: Smart Upload to Lanzou
         shell: bash
         env:
@@ -61,32 +57,30 @@ jobs:
           pip install lanzou-api
           python -c "
           import os
-          from lanzou.api import LanzouCloud
+          import lanzou.api
+          
+          # 动态获取类名，兼容 LanzouCloud 和 LanZouCloud
+          LanzouClass = getattr(lanzou.api, 'LanZouCloud', getattr(lanzou.api, 'LanzouCloud', None))
           
           def smart_upload(file_name):
-              if not os.path.exists(file_name):
-                  return
-              
-              # 获取文件大小 (MB)
+              if not os.path.exists(file_name): return
               file_size = os.path.getsize(file_name) / (1024 * 1024)
-              print(f'--- 正在检查文件: {file_name} ---')
-              print(f'文件大小: {file_size:.2f} MB')
+              print(f'Checking {file_name} ({file_size:.2f} MB)')
               
               if file_size > 99:
-                  print(f'⚠️ 警告: {file_name} 超过蓝奏云 100MB 限制，已跳过上传。')
-                  print('💡 请前往仓库首页的 Releases 区域下载此文件。')
+                  print('Too large for Lanzou, skip.')
               else:
-                  lanzou = LanzouCloud()
-                  if lanzou.login_by_cookie(os.environ['LANZOU_COOKIE']) == LanzouCloud.SUCCESS:
-                      # 上传至根目录 (-1)
-                      res = lanzou.upload_file(file_name, -1)
-                      print(f'✅ 上传成功！蓝奏云链接: {res.full_address}')
+                  lanzou_instance = LanzouClass()
+                  if lanzou_instance.login_by_cookie(os.environ['LANZOU_COOKIE']) == LanzouClass.SUCCESS:
+                      res = lanzou_instance.upload_file(file_name, -1)
+                      print(f'Success: {res.full_address}')
                   else:
-                      print('❌ 登录失败: 请检查 LANZOU_COOKIE 是否有效。')
+                      print('Login failed.')
 
-          # 自动检测并处理所有成品
-          if os.path.exists('SimpleLive-Android.apk'):
-              smart_upload('SimpleLive-Android.apk')
-          if os.path.exists('SimpleLive-Windows.zip'):
-              smart_upload('SimpleLive-Windows.zip')
+          if LanzouClass:
+              for f in os.listdir('.'):
+                  if f.endswith('.apk') or f.endswith('.zip'):
+                      smart_upload(f)
+          else:
+              print('Could not find Lanzou class in library.')
           "
