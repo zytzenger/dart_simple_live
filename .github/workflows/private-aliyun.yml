@@ -52,13 +52,13 @@ jobs:
           flutter build windows --release
 
       - name: Zip and Upload Windows
-        shell: bash
+        shell: pwsh
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          cd simple_live_app/build/windows/x64/runner/
-          zip -r ../../../../../Windows_Release.zip ./*
-          cd ../../../../../
-          # Windows 下也使用 bash 调用命令行上传
+          # 使用 Windows 原生的 PowerShell 进行压缩
+          Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip
+          
+          # 下载上传工具并执行
           curl -sL https://git.io/file-transfer | sh
           ./transfer ali Windows_Release.zip --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Windows
