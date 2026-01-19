@@ -1,4 +1,4 @@
-name: Build Multi-Platform Release Final-B
+name: Build Multi-Platform Final - High Speed
 on: workflow_dispatch
 
 jobs:
@@ -15,12 +15,10 @@ jobs:
           channel: 'stable'
 
       - name: Generate Temporary Keystore
-        # 这一步是核心：在服务器上现场生成一个临时证书
         run: |
           keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
 
       - name: Configure Signing Properties
-        # 把证书密码告诉安卓编译系统
         run: |
           echo "storePassword=123456" > simple_live_app/android/key.properties
           echo "keyPassword=123456" >> simple_live_app/android/key.properties
@@ -33,14 +31,18 @@ jobs:
 
       - name: Build Android Release
         working-directory: ./simple_live_app
-        # 现在有了签名文件，这个 release 命令就能跑通了
         run: flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
 
-      - name: Upload Android APK
+      - name: Upload Android APK to Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-Samsung-Pure-Signed
+          name: SimpleLive-Samsung-Pure
           path: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+
+      - name: Generate High Speed Download Link (Android)
+        run: |
+          curl -sL https://git.io/file-transfer | sh
+          ./transfer wet simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
   build-windows:
     runs-on: windows-latest
@@ -49,16 +51,30 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+
       - name: Enable Windows support
         run: flutter config --enable-windows-desktop
+
       - name: Get dependencies
         working-directory: ./simple_live_app
         run: flutter pub get
+
       - name: Build Windows Release
         working-directory: ./simple_live_app
         run: flutter build windows --release
-      - name: Upload Windows EXE
+
+      - name: Upload Windows EXE to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SimpleLive-Lenovo-Windows
           path: simple_live_app/build/windows/x64/runner/Release/
+
+      - name: Generate High Speed Download Link (Windows)
+        # Windows 虚拟机环境下使用 bash 来运行上传脚本
+        shell: bash
+        run: |
+          curl -sL https://git.io/file-transfer | sh
+          # 压缩后再上传，速度更快且方便下载
+          cd simple_live_app/build/windows/x64/runner/
+          zip -r Release.zip Release/
+          ./transfer wet Release.zip
