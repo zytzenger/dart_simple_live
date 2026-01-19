@@ -1,8 +1,7 @@
-name: Build Multi-Platform Release Final
+name: Build Multi-Platform Release Final-B
 on: workflow_dispatch
 
 jobs:
-  # 安卓部分：生成适合三星 Note20 的纯净版
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -15,23 +14,34 @@ jobs:
         with:
           channel: 'stable'
 
+      - name: Generate Temporary Keystore
+        # 这一步是核心：在服务器上现场生成一个临时证书
+        run: |
+          keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
+
+      - name: Configure Signing Properties
+        # 把证书密码告诉安卓编译系统
+        run: |
+          echo "storePassword=123456" > simple_live_app/android/key.properties
+          echo "keyPassword=123456" >> simple_live_app/android/key.properties
+          echo "keyAlias=upload" >> simple_live_app/android/key.properties
+          echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
+
       - name: Get dependencies
         working-directory: ./simple_live_app
         run: flutter pub get
 
       - name: Build Android Release
         working-directory: ./simple_live_app
-        # 使用最稳妥的命令，去掉不兼容的参数
+        # 现在有了签名文件，这个 release 命令就能跑通了
         run: flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-Samsung-Pure
-          # 这样写可以确保不管包名有没有带 unsigned 都能被抓取到
-          path: simple_live_app/build/app/outputs/flutter-apk/*.apk
+          name: SimpleLive-Samsung-Pure-Signed
+          path: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 
-  # Windows 部分：生成适合联想笔记本的纯净版
   build-windows:
     runs-on: windows-latest
     steps:
@@ -39,18 +49,14 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-
       - name: Enable Windows support
         run: flutter config --enable-windows-desktop
-
       - name: Get dependencies
         working-directory: ./simple_live_app
         run: flutter pub get
-
       - name: Build Windows Release
         working-directory: ./simple_live_app
         run: flutter build windows --release
-
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
