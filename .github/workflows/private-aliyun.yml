@@ -5,6 +5,8 @@ jobs:
   build:
     name: Build and Deploy
     strategy:
+      # 重要：防止 Windows 失败导致 Android 也跟着被取消
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -41,8 +43,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: "Final Build v1.1.${{ github.run_number }}"
+          tag_name: v1.2.${{ github.run_number }}
+          name: "Final Build v1.2.${{ github.run_number }}"
           files: |
             *.apk
             *.zip
@@ -59,7 +61,6 @@ jobs:
           import os
           import lanzou.api
           
-          # 动态获取类名，兼容 LanzouCloud 和 LanZouCloud
           LanzouClass = getattr(lanzou.api, 'LanZouCloud', getattr(lanzou.api, 'LanzouCloud', None))
           
           def smart_upload(file_name):
@@ -71,16 +72,18 @@ jobs:
                   print('Too large for Lanzou, skip.')
               else:
                   lanzou_instance = LanzouClass()
-                  if lanzou_instance.login_by_cookie(os.environ['LANZOU_COOKIE']) == LanzouClass.SUCCESS:
+                  # 直接使用 Secret 里的值作为 ylogin 登录，不再尝试解析字符串
+                  cookie_val = os.environ['LANZOU_COOKIE']
+                  login_res = lanzou_instance.login_by_cookie({'ylogin': cookie_val})
+                  
+                  if login_res == LanzouClass.SUCCESS:
                       res = lanzou_instance.upload_file(file_name, -1)
                       print(f'Success: {res.full_address}')
                   else:
-                      print('Login failed.')
+                      print(f'Login failed with code: {login_res}')
 
           if LanzouClass:
               for f in os.listdir('.'):
                   if f.endswith('.apk') or f.endswith('.zip'):
                       smart_upload(f)
-          else:
-              print('Could not find Lanzou class in library.')
           "
