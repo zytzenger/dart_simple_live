@@ -28,8 +28,7 @@ jobs:
           flutter pub get
           flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
 
-      - name: Upload to Aliyun Drive
-        # 使用命令行工具 ali-avpan，不依赖 Github Action 插件库
+      - name: Upload Android to Aliyun
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
@@ -56,9 +55,9 @@ jobs:
         env:
           REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
         run: |
-          # 使用 Windows 原生的 PowerShell 进行压缩
+          # 使用 Windows 原生命令压缩包
           Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip
           
-          # 下载上传工具并执行
-          curl -sL https://git.io/file-transfer | sh
-          ./transfer ali Windows_Release.zip --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Windows
+          # 显式下载并使用 bash 环境执行上传，解决 Windows 环境下的路径识别问题
+          Invoke-WebRequest -Uri "https://git.io/file-transfer" -OutFile transfer.sh
+          bash ./transfer.sh ali Windows_Release.zip --token "$env:REFRESH_TOKEN" --dir "/Github_Artifacts/Windows"
