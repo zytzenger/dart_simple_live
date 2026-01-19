@@ -1,69 +1,73 @@
-name: Private Aliyun Auto-Sync
+name: Ultimate Stable Build
 on: workflow_dispatch
 
 jobs:
-  build-android:
-    runs-on: ubuntu-latest
+  build:
+    name: Build and Link
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: android
+          - os: windows-latest
+            platform: windows
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Generate Keystore
+      # --- 编译 Android ---
+      - name: Build Android
+        if: matrix.platform == 'android'
         run: |
-          keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
+          keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown"
           echo "storePassword=123456" > simple_live_app/android/key.properties
           echo "keyPassword=123456" >> simple_live_app/android/key.properties
           echo "keyAlias=upload" >> simple_live_app/android/key.properties
           echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
+          cd simple_live_app && flutter pub get && flutter build apk --release --no-tree-shake-icons
+          mv simple_live_app/build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Android.apk
 
-      - name: Build Android
-        working-directory: ./simple_live_app
-        run: |
-          flutter pub get
-          flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
-
-      - name: Upload Android to Aliyun
-        env:
-          REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
-        run: |
-          curl -sL https://git.io/file-transfer -o transfer.sh
-          chmod +x transfer.sh
-          ./transfer.sh ali simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk --token "$REFRESH_TOKEN" --dir /Github_Artifacts/Android
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-
+      # --- 编译 Windows ---
       - name: Build Windows
-        working-directory: ./simple_live_app
+        if: matrix.platform == 'windows'
         run: |
+          cd simple_live_app
           flutter config --enable-windows-desktop
           flutter pub get
           flutter build windows --release
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Windows.zip
 
-      - name: Zip and Upload Windows
-        shell: pwsh
-        env:
-          REFRESH_TOKEN: ${{ secrets.ALIYUN_REFRESH_TOKEN }}
+      # --- 1. 生成 WeTransfer 短链接 (你需要的) ---
+      - name: Generate WeTransfer Link
+        shell: bash
         run: |
-          # 1. 生成压缩包
-          Compress-Archive -Path simple_live_app/build/windows/x64/runner/Release/* -DestinationPath Windows_Release.zip -Force
-          
-          # 2. 下载 Windows 专用工具并解压
-          Invoke-WebRequest -Uri "https://github.com/tickstep/aliyunpan/releases/download/v0.3.0/aliyunpan-v0.3.0-windows-x64.zip" -OutFile aliyunpan.zip
-          Expand-Archive -Path aliyunpan.zip -DestinationPath .
-          
-          # 3. 修正后的登录与上传指令（去掉 - 符号，直接使用参数名）
-          cd aliyunpan-v0.3.0-windows-x64
-          ./aliyunpan.exe login -refreshToken "$env:REFRESH_TOKEN"
-          ./aliyunpan.exe upload ../Windows_Release.zip /Github_Artifacts/Windows
+          curl -fsSL git.io/file-transfer | sh
+          if [ "${{ matrix.platform }}" == "android" ]; then
+            ./transfer wet SimpleLive-Android.apk
+          else
+            ./transfer wet SimpleLive-Windows.zip
+          fi
+
+      # --- 2. 存入 GitHub Releases ---
+      - name: Release to GitHub
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          files: |
+            *.apk
+            *.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- 3. 存入 Actions Artifacts ---
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-files
+          path: |
+            *.apk
+            *.zip
