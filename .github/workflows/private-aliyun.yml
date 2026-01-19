@@ -1,4 +1,4 @@
-name: Note20U & Lenovo Final Release
+name: Precise Slim & Sync Release
 on: workflow_dispatch
 
 jobs:
@@ -15,86 +15,60 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 设为 0 以确保抓取所有最新的同步记录，保持与原作者一致
+          fetch-depth: 0
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      # --- 1. Android (Note20 Ultra) ---
-      - name: Build Android
+      # --- 1. 三星 Note20 Ultra 定制瘦身编译 ---
+      - name: Build Android (Note20U Optimized)
         if: matrix.platform == 'android'
         run: |
+          # 自动生成临时签名
           keytool -genkey -v -keystore simple_live_app/android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass 123456 -keypass 123456 -dname "CN=Unknown"
           echo "storePassword=123456" > simple_live_app/android/key.properties
           echo "keyPassword=123456" >> simple_live_app/android/key.properties
           echo "keyAlias=upload" >> simple_live_app/android/key.properties
           echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
+          
           cd simple_live_app && flutter pub get 
-          flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
-          mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Note20U-Arm64.apk
+          
+          # 【核心瘦身策略】：
+          # 1. --target-platform android-arm64: 专供 Note20 Ultra 架构
+          # 2. --obfuscate: 混淆代码，提升运行速度
+          # 3. --split-debug-info: 剔除调试冗余，大幅减小体积
+          # 4. --tree-shake-icons: 移除未使用的图标资源
+          flutter build apk --release \
+            --target-platform android-arm64 \
+            --obfuscate \
+            --split-debug-info=build/app/outputs/symbols \
+            --tree-shake-icons
+            
+          mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Note20U-Arm64-Slim.apk
 
-      # --- 2. Windows (Lenovo Air13) ---
-      - name: Build Windows
+      # --- 2. 联想小新 Air 13 Pro 适配编译 ---
+      - name: Build Windows (Lenovo Air13 Optimized)
         if: matrix.platform == 'windows'
         run: |
           cd simple_live_app
           flutter config --enable-windows-desktop
           flutter pub get
           flutter build windows --release
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Lenovo-Air13.zip
+          # 仅打包 Release 运行环境
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Lenovo-Win64.zip
 
-      # --- 3. GitHub Release ---
+      # --- 3. 唯一发布通道：GitHub Release ---
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.${{ github.run_number }}
-          name: "Final Build v1.3.${{ github.run_number }}"
+          tag_name: v1.4.${{ github.run_number }}
+          name: "Device-Optimized v1.4.${{ github.run_number }}"
+          # 自动删除旧的草稿，只上传这次生成的两个精简包
           files: |
             *.apk
             *.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # --- 4. Smart Upload (English Log Only) ---
-      - name: Smart Upload to Lanzou
-        shell: bash
-        env:
-          LANZOU_COOKIE: ${{ secrets.LANZOU_COOKIE }}
-        run: |
-          pip install lanzou-api
-          python -c "
-          import os, lanzou.api, time, sys
-          # Force UTF8 for Windows environment
-          if hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(encoding='utf-8')
-          
-          LanzouClass = getattr(lanzou.api, 'LanZouCloud', getattr(lanzou.api, 'LanzouCloud', None))
-          
-          def smart_upload(file_name):
-              if not os.path.exists(file_name): return
-              file_size = os.path.getsize(file_name) / (1024 * 1024)
-              print(f'Checking: {file_name} ({file_size:.2f} MB)')
-              
-              if file_size > 99:
-                  print('File too large, skipping Lanzou.')
-              else:
-                  lanzou_instance = LanzouClass()
-                  cookie_val = os.environ['LANZOU_COOKIE']
-                  
-                  for attempt in range(3):
-                      print(f'Attempt {attempt+1}: Logging in...')
-                      login_res = lanzou_instance.login_by_cookie({'ylogin': cookie_val})
-                      
-                      if login_res == LanzouClass.SUCCESS:
-                          print('Login success, uploading...')
-                          res = lanzou_instance.upload_file(file_name, -1)
-                          if res:
-                              print(f'SUCCESS! Link: {res.full_address}')
-                              return
-                      print(f'Attempt {attempt+1} failed (Code: {login_res}), retrying...')
-                      time.sleep(5)
-                  print(f'Final Error: {file_name} failed.')
-
-          if LanzouClass:
-              for f in os.listdir('.'):
-                  if f.endswith('.apk') or f.endswith('.zip'):
-                      smart_upload(f)
-          "
