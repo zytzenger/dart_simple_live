@@ -1,11 +1,10 @@
-name: Ultimate Smart Release
+name: Note20U & Lenovo Optimized Release
 on: workflow_dispatch
 
 jobs:
   build:
     name: Build and Deploy
     strategy:
-      # 重要：防止 Windows 失败导致 Android 也跟着被取消
       fail-fast: false
       matrix:
         include:
@@ -20,6 +19,7 @@ jobs:
         with:
           channel: 'stable'
 
+      # --- 1. 安卓端：专为三星 Note20 Ultra (Arm64) 优化 ---
       - name: Build Android
         if: matrix.platform == 'android'
         run: |
@@ -28,9 +28,12 @@ jobs:
           echo "keyPassword=123456" >> simple_live_app/android/key.properties
           echo "keyAlias=upload" >> simple_live_app/android/key.properties
           echo "storeFile=upload-keystore.jks" >> simple_live_app/android/key.properties
-          cd simple_live_app && flutter pub get && flutter build apk --release --no-tree-shake-icons
-          mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Android.apk
+          cd simple_live_app && flutter pub get 
+          # 只编译 arm64 架构，大幅瘦身以适配蓝奏云限制
+          flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
+          mv build/app/outputs/flutter-apk/app-release.apk ../SimpleLive-Note20U-Arm64.apk
 
+      # --- 2. Windows端：适配联想小新 Air 13 Pro ---
       - name: Build Windows
         if: matrix.platform == 'windows'
         run: |
@@ -38,19 +41,21 @@ jobs:
           flutter config --enable-windows-desktop
           flutter pub get
           flutter build windows --release
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Windows.zip
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath ../SimpleLive-Lenovo-Air13.zip
 
+      # --- 3. 第一备份：发布到 GitHub Release ---
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.2.${{ github.run_number }}
-          name: "Final Build v1.2.${{ github.run_number }}"
+          tag_name: v1.3.${{ github.run_number }}
+          name: "Precise Build v1.3.${{ github.run_number }}"
           files: |
             *.apk
             *.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # --- 4. 第二发布：智能秤重并上传蓝奏云 (带重试逻辑) ---
       - name: Smart Upload to Lanzou
         shell: bash
         env:
@@ -58,29 +63,37 @@ jobs:
         run: |
           pip install lanzou-api
           python -c "
-          import os
-          import lanzou.api
+          import os, lanzou.api, time
           
+          # 自动匹配库类名
           LanzouClass = getattr(lanzou.api, 'LanZouCloud', getattr(lanzou.api, 'LanzouCloud', None))
           
           def smart_upload(file_name):
               if not os.path.exists(file_name): return
               file_size = os.path.getsize(file_name) / (1024 * 1024)
-              print(f'Checking {file_name} ({file_size:.2f} MB)')
+              print(f'\n[Checking] {file_name} - Size: {file_size:.2f} MB')
               
               if file_size > 99:
-                  print('Too large for Lanzou, skip.')
+                  print(f'⚠️ 文件超过100MB，跳过蓝奏云，请在GitHub Release中下载。')
               else:
                   lanzou_instance = LanzouClass()
-                  # 直接使用 Secret 里的值作为 ylogin 登录，不再尝试解析字符串
                   cookie_val = os.environ['LANZOU_COOKIE']
-                  login_res = lanzou_instance.login_by_cookie({'ylogin': cookie_val})
                   
-                  if login_res == LanzouClass.SUCCESS:
-                      res = lanzou_instance.upload_file(file_name, -1)
-                      print(f'Success: {res.full_address}')
-                  else:
-                      print(f'Login failed with code: {login_res}')
+                  # 针对海外服务器网络波动，尝试3次重试
+                  for attempt in range(3):
+                      print(f'Attempt {attempt+1}: Logging in...')
+                      # 修正字典传参，适配 ylogin
+                      login_res = lanzou_instance.login_by_cookie({'ylogin': cookie_val})
+                      
+                      if login_res == LanzouClass.SUCCESS:
+                          print('Login success, uploading...')
+                          res = lanzou_instance.upload_file(file_name, -1)
+                          if res:
+                              print(f'✅ SUCCESS! Link: {res.full_address}')
+                              return
+                      print(f'⚠️ Attempt {attempt+1} failed (Code: {login_res}), retrying in 5s...')
+                      time.sleep(5)
+                  print(f'❌ 经过3次尝试，{file_name} 依然无法上传蓝奏云。')
 
           if LanzouClass:
               for f in os.listdir('.'):
