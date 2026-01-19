@@ -1,8 +1,8 @@
-name: Build Multi-Platform Pure Release
+name: Build Multi-Platform Release Final
 on: workflow_dispatch
 
 jobs:
-  # 安卓正式版编译：去除 DEBUG 按钮和飘带
+  # 安卓部分：生成适合三星 Note20 的纯净版
   build-android:
     runs-on: ubuntu-latest
     steps:
@@ -21,11 +21,38 @@ jobs:
 
       - name: Build Android Release
         working-directory: ./simple_live_app
-        # 使用 --release 模式实现“纯净版”，--no-signing 绕过签名文件校验
-        run: flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub --no-signing
+        # 使用最稳妥的命令，去掉不兼容的参数
+        run: flutter build apk --release --split-per-abi --no-tree-shake-icons --no-pub
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-Samsung-Pure-Edition
-          path: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8
+          name: SimpleLive-Samsung-Pure
+          # 这样写可以确保不管包名有没有带 unsigned 都能被抓取到
+          path: simple_live_app/build/app/outputs/flutter-apk/*.apk
+
+  # Windows 部分：生成适合联想笔记本的纯净版
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Enable Windows support
+        run: flutter config --enable-windows-desktop
+
+      - name: Get dependencies
+        working-directory: ./simple_live_app
+        run: flutter pub get
+
+      - name: Build Windows Release
+        working-directory: ./simple_live_app
+        run: flutter build windows --release
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleLive-Lenovo-Windows
+          path: simple_live_app/build/windows/x64/runner/Release/
